@@ -19,19 +19,10 @@ describe("LastDrop", function () {
   async function deployFixture() {
     const [owner, alice, bob] = await ethers.getSigners();
 
-    // Повторяем тот же порядок, что и в Ignition-модуле:
-    // 1) токен с временным владельцем-деплоером
-    const token = await ethers.deployContract("LastDropToken", [
-      owner.address,
-    ]);
-    // 2) игра, уже знает адрес токена при деплое
-    const lastDrop = await ethers.deployContract("LastDrop", [
-      await token.getAddress(),
-    ]);
-    // 3) права на минт передаются игровому контракту
-    await token.connect(owner).transferOwnership(await lastDrop.getAddress());
+    // Один контракт — он же игра, он же токен DROP
+    const lastDrop = await ethers.deployContract("LastDrop");
 
-    return { token, lastDrop, owner, alice, bob };
+    return { lastDrop, owner, alice, bob };
   }
 
   describe("Начальное состояние", function () {
@@ -246,32 +237,33 @@ describe("LastDrop", function () {
   });
 
   describe("Бонусный минтинг токена (DROP)", function () {
-    it("владение токеном после деплоя переходит к игровому контракту", async function () {
-      const { token, lastDrop } = await deployFixture();
+    it("игровой контракт сам является токеном DROP", async function () {
+      const { lastDrop } = await deployFixture();
 
-      expect(await token.owner()).to.equal(await lastDrop.getAddress());
+      // Эти функции LastDrop унаследовал от ERC20
+      expect(await lastDrop.name()).to.equal("LastDrop Token");
+      expect(await lastDrop.symbol()).to.equal("DROP");
+      expect(await lastDrop.decimals()).to.equal(18);
+      expect(await lastDrop.totalSupply()).to.equal(0);
     });
 
-    it("запрещает минтить токен напрямую, в обход игры", async function () {
-      const { token, alice } = await deployFixture();
+    it("не имеет публичной функции mint — минтить в обход игры нельзя", async function () {
+      const { lastDrop } = await deployFixture();
 
-      // OpenZeppelin v5 Ownable ревертит кастомной ошибкой, а не строкой
-      await expect(
-        token.connect(alice).mint(alice.address, ethers.parseEther("1"))
-      )
-        .to.be.revertedWithCustomError(token, "OwnableUnauthorizedAccount")
-        .withArgs(alice.address);
+      // _mint — internal, поэтому её нет в ABI контракта
+      expect(lastDrop.interface.hasFunction("mint")).to.equal(false);
+      expect(lastDrop.interface.hasFunction("_mint")).to.equal(false);
     });
 
     it("начисляет 1 DROP игроку при ставке, пока bank ниже порога", async function () {
-      const { lastDrop, token, alice } = await deployFixture();
+      const { lastDrop, alice } = await deployFixture();
 
       const tx = await lastDrop.connect(alice).bet({ value: BET_AMOUNT });
 
-      expect(await token.balanceOf(alice.address)).to.equal(
+      expect(await lastDrop.balanceOf(alice.address)).to.equal(
         ethers.parseEther("1")
       );
-      expect(await token.totalSupply()).to.equal(ethers.parseEther("1"));
+      expect(await lastDrop.totalSupply()).to.equal(ethers.parseEther("1"));
 
       await expect(tx)
         .to.emit(lastDrop, "BonusMinted")
@@ -279,7 +271,7 @@ describe("LastDrop", function () {
     });
 
     it("перестаёт начислять бонус, как только банк раунда достигает порога", async function () {
-      const { lastDrop, token, owner, alice, bob } = await deployFixture();
+      const { lastDrop, owner, alice, bob } = await deployFixture();
 
       // Подгоняем betAmount так, чтобы порог 1000 ether пробивался ровно за 2 ставки
       const bigBet = ethers.parseEther("1000");
@@ -287,7 +279,7 @@ describe("LastDrop", function () {
 
       // 1-я ставка: bank станет 900 ether (после 10% fee) — ниже порога, бонус есть
       await lastDrop.connect(alice).bet({ value: bigBet });
-      expect(await token.balanceOf(alice.address)).to.equal(
+      expect(await lastDrop.balanceOf(alice.address)).to.equal(
         ethers.parseEther("1")
       );
 
@@ -295,16 +287,16 @@ describe("LastDrop", function () {
       // для этой ставки бонуса быть не должно
       const tx = await lastDrop.connect(bob).bet({ value: bigBet });
 
-      expect(await token.balanceOf(bob.address)).to.equal(0);
+      expect(await lastDrop.balanceOf(bob.address)).to.equal(0);
       await expect(tx).to.not.emit(lastDrop, "BonusMinted");
     });
 
     it("возобновляет начисление бонуса в новом раунде после сброса банка", async function () {
-      const { lastDrop, token, alice, bob } = await deployFixture();
+      const { lastDrop, alice, bob } = await deployFixture();
 
       // Раунд 1: Алиса ставит и получает бонус
       await lastDrop.connect(alice).bet({ value: BET_AMOUNT });
-      expect(await token.balanceOf(alice.address)).to.equal(
+      expect(await lastDrop.balanceOf(alice.address)).to.equal(
         ethers.parseEther("1")
       );
 
@@ -314,7 +306,7 @@ describe("LastDrop", function () {
       // Раунд 2: ставка Боба открывает новый раунд с чистым bank — бонус снова доступен
       const tx = await lastDrop.connect(bob).bet({ value: BET_AMOUNT });
 
-      expect(await token.balanceOf(bob.address)).to.equal(
+      expect(await lastDrop.balanceOf(bob.address)).to.equal(
         ethers.parseEther("1")
       );
       await expect(tx)

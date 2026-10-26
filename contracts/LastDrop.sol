@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import "./LastDropToken.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-contract LastDrop {
+// "is ERC20" — наследование: LastDrop получает весь код ERC20
+// (balanceOf, transfer, totalSupply, _mint...) и сам становится токеном DROP.
+contract LastDrop is ERC20 {
     address public owner;
-    LastDropToken public token;
 
     uint256 public betAmount = 10 ether;
     uint256 public betInterval = 300;
@@ -30,9 +31,9 @@ contract LastDrop {
         _;
     }
 
-    constructor(address tokenAddress) {
+    // ERC20(...) — вызываем конструктор родителя и передаём ему имя и символ токена.
+    constructor() ERC20("LastDrop Token", "DROP") {
         owner = msg.sender;
-        token = LastDropToken(tokenAddress);
     }
 
     function bet() external payable {
@@ -55,7 +56,9 @@ contract LastDrop {
         deadline = block.timestamp + betInterval;
 
         if (bank < BANK_THRESHOLD) {
-            token.mint(msg.sender, BONUS_AMOUNT);
+            // _mint — internal-функция из ERC20: снаружи её не вызвать,
+            // поэтому выпускать токены может только сама игра.
+            _mint(msg.sender, BONUS_AMOUNT);
             emit BonusMinted(msg.sender, BONUS_AMOUNT);
         }
 
