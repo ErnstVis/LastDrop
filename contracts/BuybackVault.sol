@@ -15,7 +15,7 @@ interface IStakingDonate {
 ///         резерва — курс = reserveBalance / totalSupply(token), с виртуальным
 ///         оффсетом на случай, если totalSupply() стремится к нулю.
 ///
-///         Резерв растёт только до целевого backing ratio (1:10 к эмиссии).
+///         Резерв растёт только до целевого backing ratio (до 10 нативных монет на 1 DROP).
 ///         Излишек сверх лимита автоматически уходит в StakingRewards —
 ///         резерв никогда не блокирует и не проваливает входящий платёж.
 contract BuybackVault is ReentrancyGuard {
@@ -24,7 +24,7 @@ contract BuybackVault is ReentrancyGuard {
 
     // Целевой backing ratio: 1 токен обеспечен не более чем NATIVE_PER_TOKEN_MAX
     // нативной валюты (в базовых единицах, 1e18 = 1 к 1).
-    uint256 public constant NATIVE_PER_TOKEN_MAX = 0.1 ether; // т.е. 1 к 10 (1 токен = 1e18)
+    uint256 public constant NATIVE_PER_TOKEN_MAX = 10 ether; // 1 DROP обеспечен максимум 10 нативных монет
 
     // Виртуальный оффсет — защита от деления на ноль и от манипуляции курсом
     // на грани, когда totalSupply() приближается к нулю. Не существует физически.
@@ -52,7 +52,7 @@ contract BuybackVault is ReentrancyGuard {
     }
 
     /// @notice Пополнить резерв. Permissionless — вызывает игра, любой желающий,
-    ///         или сторонний контракт. Если резерв уже на целевом уровне 1:10,
+    ///         или сторонний контракт. Если резерв уже на целевом уровне (10 на токен),
     ///         излишек не блокируется и не ревертит платёж — уходит стейкерам.
     function fund() external payable nonReentrant {
         require(msg.value > 0, "BuybackVault: zero funding");
